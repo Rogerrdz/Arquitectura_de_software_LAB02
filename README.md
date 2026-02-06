@@ -1,5 +1,7 @@
 # Snake Race — ARSW Lab #2 (Java 21, Virtual Threads)
 ### Autor : Roger Rodriguez
+**Escuela Colombiana de Ingeniería – Arquitecturas de Software**  
+Laboratorio de programación concurrente: condiciones de carrera, sincronización y colecciones seguras.
 ----
 ### Parte I - wait/notify en un programa multihilo
   1. Modificamos el programa prime finder paara que cada t milisegundos :
@@ -74,7 +76,7 @@ Un pequeño ejemplo del funcionamiento con pocos milisegundos por que los hilos 
 
 ### Parte II - SnakeRace concurrente (núcleo del laboratorio)
 
-1. Analisis de Concurrencia
+**1. Analisis de Concurrencia**
   1. Como se usan los hilos ?  
   Cada serpiente del juego es controlada por un hilo independiente representado por la clase SnakeRunner, dandole la autonomia en el movimiento y comportamiento.
   El hilo se ejecuta continuamente siempre y cuando no sea interrumpido antes de eso deside si gira , intenta ,moverse , puede chocar o duerme un tiempo 
@@ -87,8 +89,57 @@ Un pequeño ejemplo del funcionamiento con pocos milisegundos por que los hilos 
   - El hilo no presenta espera activa, ya que la temporizacion se maneja mediante Thread.sleep().
   - El codigo no implementa mecanismos de sincronizacion, dejandole el correcto manejo al diseño del tablero y de las clases compartidas.
     
-**Escuela Colombiana de Ingeniería – Arquitecturas de Software**  
-Laboratorio de programación concurrente: condiciones de carrera, sincronización y colecciones seguras.
+**2. Correcciones mínimas y regiones críticas**
+  - En el metodo run del hilo SnakeRunner tenemos:
+  Que este se mueve y luego se duerme activamente no responde inmediatamente a pausa / reanudar y visualmente nos damos cuenta ya que al pausar el programa se congelan visualmente pero por detras se sigue moviendo ademas que la pausa no es inmediata y el estado del juego queda a medias:
+
+  ```phyton
+      while (!Thread.currentThread().isInterrupted()) {
+      board.step(snake);
+      Thread.sleep(sleep);
+      }
+  ```
+
+  Agregamos un lock y una condicion :
+
+  ```phyton
+      while (running) {
+      waitIfPaused();
+      board.step(snake);
+      waitForNextTick();
+      }
+
+  ``` 
+
+  Lo resolvemos utilizamos mecanismos de concurrencia como lo es wait/notify y la condicion , en lugar desde que se duerma el hilo este espera una señal.
+
+  - En el tablero tenemos la funcion step() ya que esta modifica un estado compartido de raton ,obstaculo , el turbo y los teletransportes por lo cual podemos tener e problema como ejemplo que dos serpientes se coman un mismo raton o un simple estado inconsistente del tablero:
+  ```
+    mice.remove(next);
+    mice.add(randomEmpty());
+    obstacles.add(randomEmpty());
+    turbo.remove(next);
+    teleports.get(next);   
+  ```
+  Se corrige alteraldo mice , obstacles , turbo y teleports 
+  - En el acceso desde la UI al tablero se consulta los ratones , obstaculos  , turbo y teletransportes es un problema de lectura ya que los hilos tamben acceden a leer esto :
+
+  
+```
+  board.mice()
+  board.obstacles()
+  board.turbo()
+  board.teleports()
+```
+
+  La UI accede a copias defensivas y no al estado real por lo cual no hay escritura concurrente eliminando las modificaciones concurrentes 
+
+  ```
+    return new HashSet<>(mice);
+  ```
+
+**3.Control de ejecución seguro (UI)** 
+
 
 ---
 
@@ -165,11 +216,6 @@ co.eci.snake
   - Ocurrencias de **espera activa** (busy-wait) o de sincronización innecesaria.
 
 ### 2) Correcciones mínimas y regiones críticas
-
-- **Elimina** esperas activas reemplazándolas por **señales** / **estados** o mecanismos de la librería de concurrencia.
-- Protege **solo** las **regiones críticas estrictamente necesarias** (evita bloqueos amplios).
-- Justifica en **`el reporte de laboratorio`** cada cambio: cuál era el riesgo y cómo lo resuelves.
-
 ### 3) Control de ejecución seguro (UI)
 
 - Implementa la **UI** con **Iniciar / Pausar / Reanudar** (ya existe el botón _Action_ y el reloj `GameClock`).
