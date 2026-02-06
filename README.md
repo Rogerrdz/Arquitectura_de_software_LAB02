@@ -137,12 +137,83 @@ Un pequeño ejemplo del funcionamiento con pocos milisegundos por que los hilos 
   ```
     return new HashSet<>(mice);
   ```
+  - Cambiamos la funcionde TogglePause en SnakeApp ay que necesitamos pueda pausar y reanudar cada hilo , asi como pausar tods cuando le damos al boton.
+  ```
+    private void togglePause() {
+        if ("Action".equals(actionButton.getText())) {
+          actionButton.setText("Resume");
+          clock.pause();
+        } else {
+          actionButton.setText("Action");
+          clock.resume();
+        }
+      }
+  ```
+    Agregamoso una lista que almacene los Runners asi como la parte donde se crean y se guardan todos los runners 
+  ```
+    private final List<SnakeRunner> runners = new ArrayList<>();
+    var exec = Executors.newVirtualThreadPerTaskExecutor();
+    snakes.forEach(s -> {
+        SnakeRunner r = new SnakeRunner(s, board);
+        runners.add(r);
+        exec.submit(r);
+    });
+  
+  ``` 
+    Tendriamos la siguiente nueva funcion TogglePause 
 
+  ```
+    private void togglePause() {
+    if ("Action".equals(actionButton.getText())) {
+        actionButton.setText("Resume");
+        clock.pause();
+        runners.forEach(SnakeRunner::pause);
+        try {
+            for (SnakeRunner r : runners) {
+                r.waitUntilPaused();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        showStatistics();
+    } else {
+        actionButton.setText("Action");
+        clock.resume();
+        runners.forEach(SnakeRunner::resume);
+    }
+    }
+
+  ````
 **3.Control de ejecución seguro (UI)** 
 
+Con lo trabajamos en el punto anterior continuamos con la implementacion y para esto creamos la clase showStadistics() para msitrar estadisticas cuando se pause el juego , estan muestran la serpiente mas larga y la mas corta:
 
+  ```
+  private void showStatistics() {
+    if (snakes.isEmpty()) return;
+    Snake longest = snakes.stream()
+        .max(Comparator.comparingInt(s -> s.snapshot().size()))
+        .orElse(null);
+    Snake worst = snakes.stream()
+        .min(Comparator.comparingInt(s -> s.snapshot().size()))
+        .orElse(null);
+
+    String message = String.format(
+        "Serpiente más larga: %d bloques\nPeor serpiente: %d bloques",
+        (longest != null ? longest.snapshot().size() : 0),
+        (worst != null ? worst.snapshot().size() : 0)
+    );
+
+    JOptionPane.showMessageDialog(this, message, "Estadisticas", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+  ```
+**4.Robustez bajo carga**
+Se deben ejecutar las pruebas usando :
+  ```
+  mvn -q -DskipTests exec:java -Dsnakes=20
+  ```
 ---
-
 ## Requisitos
 
 - **JDK 21** (Temurin recomendado)
@@ -186,75 +257,6 @@ co.eci.snake
 ├─ concurrency/         # SnakeRunner (lógica por serpiente con virtual threads)
 └─ ui/legacy/           # UI estilo legado (Swing) con grilla y botón Action
 ```
-
----
-
-# Actividades del laboratorio
-
-## Parte I — (Calentamiento) `wait/notify` en un programa multi-hilo
-
-1. Toma el programa [**PrimeFinder**](https://github.com/ARSW-ECI/wait-notify-excercise).
-2. Modifícalo para que **cada _t_ milisegundos**:
-   - Se **pausen** todos los hilos trabajadores.
-   - Se **muestre** cuántos números primos se han encontrado.
-   - El programa **espere ENTER** para **reanudar**.
-3. La sincronización debe usar **`synchronized`**, **`wait()`**, **`notify()` / `notifyAll()`** sobre el **mismo monitor** (sin _busy-waiting_).
-4. Entrega en el reporte de laboratorio **las observaciones y/o comentarios** explicando tu diseño de sincronización (qué lock, qué condición, cómo evitas _lost wakeups_).
-
-> Objetivo didáctico: practicar suspensión/continuación **sin** espera activa y consolidar el modelo de monitores en Java.
-
----
-
-## Parte II — SnakeRace concurrente (núcleo del laboratorio)
-
-### 1) Análisis de concurrencia
-
-- Explica **cómo** el código usa hilos para dar autonomía a cada serpiente.
-- **Identifica** y documenta en **`el reporte de laboratorio`**:
-  - Posibles **condiciones de carrera**.
-  - **Colecciones** o estructuras **no seguras** en contexto concurrente.
-  - Ocurrencias de **espera activa** (busy-wait) o de sincronización innecesaria.
-
-### 2) Correcciones mínimas y regiones críticas
-### 3) Control de ejecución seguro (UI)
-
-- Implementa la **UI** con **Iniciar / Pausar / Reanudar** (ya existe el botón _Action_ y el reloj `GameClock`).
-- Al **Pausar**, muestra de forma **consistente** (sin _tearing_):
-  - La **serpiente viva más larga**.
-  - La **peor serpiente** (la que **primero murió**).
-- Considera que la suspensión **no es instantánea**; coordina para que el estado mostrado no quede “a medias”.
-
-### 4) Robustez bajo carga
-
-- Ejecuta con **N alto** (`-Dsnakes=20` o más) y/o aumenta la velocidad.
-- El juego **no debe romperse**: sin `ConcurrentModificationException`, sin lecturas inconsistentes, sin _deadlocks_.
-- Si habilitas **teleports** y **turbo**, verifica que las reglas no introduzcan carreras.
-
-> Entregables detallados más abajo.
-
----
-
-## Entregables
-
-1. **Código fuente** funcionando en **Java 21**.
-2. Todo de manera clara en **`**el reporte de laboratorio**`** con:
-   - Data races encontradas y su solución.
-   - Colecciones mal usadas y cómo se protegieron (o sustituyeron).
-   - Esperas activas eliminadas y mecanismo utilizado.
-   - Regiones críticas definidas y justificación de su **alcance mínimo**.
-3. UI con **Iniciar / Pausar / Reanudar** y estadísticas solicitadas al pausar.
-
----
-
-## Criterios de evaluación (10)
-
-- (3) **Concurrencia correcta**: sin data races; sincronización bien localizada.
-- (2) **Pausa/Reanudar**: consistencia visual y de estado.
-- (2) **Robustez**: corre **con N alto** y sin excepciones de concurrencia.
-- (1.5) **Calidad**: estructura clara, nombres, comentarios; sin _code smells_ obvios.
-- (1.5) **Documentación**: **`reporte de laboratorio`** claro, reproducible;
-
----
 
 ## Tips y configuración útil
 
